@@ -3,7 +3,7 @@ import requests
 baseUrl = 'http://www.illustris-project.org/api/'
 headers = {"api-key":"cc4ff6392e79c9e08c158e5ae5493718"}
 
-def get(path, params=None):
+def get(path, params=None): #gets data from url, saves to file
     # make HTTP GET request to path
     r = requests.get(path, params=params, headers=headers)
 
@@ -18,7 +18,7 @@ def get(path, params=None):
         filename = r.headers['content-disposition'].split("filename=")[1]
         with open(filename, 'wb') as f:
             f.write(r.content)
-        return filename # return the filename string
+        return 'this' # return the filename string
 
     return r
 
