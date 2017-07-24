@@ -1,14 +1,15 @@
 import requests
-import h5py
 import numpy as np
+import h5py
 
 baseUrl = 'http://www.illustris-project.org/api/'
 headers = {"api-key":"cc4ff6392e79c9e08c158e5ae5493718"}
-
-def get(path, params=None): #gets data from url, saves to file
+    
+# Routine to pull data from online
+def get(path, params=None): # gets data from url, saves to file
     # make HTTP GET request to path
     r = requests.get(path, params=params, headers=headers)
-
+    
     # raise exception if response code is not HTTP SUCCESS (200)
     r.raise_for_status()
 
@@ -24,6 +25,71 @@ def get(path, params=None): #gets data from url, saves to file
         return tempFile # return the filename string
 
     return r
+    
+# For a chosen galaxy pulls out all the particle data for a set of fields
+particleTypeNames=['gas','dm','error','tracers','stars','bhs'] 
+def getGalaxy(whichGalaxy,fields): # index of a galaxy and the 2d list of fields (particle type and name of fields)
+    url='http://www.illustris-project.org/api/Illustris-1/snapshots/135/subhalos/'+str(whichGalaxy)+'/cutout.hdf5?'
+    fields=np.array(fields) # converts to array
+    order=np.argsort(fields[:,0])
+    disorder=np.argsort(order) # needed to unsort the fields later...
+    fields=fields[order,:] # orders by particle type
+    nFields=order.size
+    thisParticle=0
+    thisEntry=0
+    firstParticle=1
+    while thisParticle<6: # cycles through all particle type
+        #print('particle ',thisParticle)
+        #print('entry ',thisEntry)
+        #print(url)
+        if (int(fields[thisEntry,0])!=thisParticle): # checks there is at least one field for this particle
+            thisParticle+=1
+            continue
+        if firstParticle==1: # first particle requires no ampersand
+            firstParticle=0
+        else: # all later particles do
+            url+='&' 
+        url+=particleTypeNames[thisParticle]+'=' # adds the name of the particle type
+        #print(url)
+        firstEntry=1
+        while int(fields[thisEntry,0])==thisParticle:
+            if firstEntry==1: #first entry requires no comma
+                firstEntry=0
+            else: # all later entries do
+                url+=','
+            url+=fields[thisEntry,1] # adds every associated field
+            #print(url)
+            thisEntry+=1
+            if thisEntry==nFields:
+                break
+        if thisEntry==nFields:
+            break
+        thisParticle+=1
+    dataFile=get(url)
+    # actually get the data (saved to temp.hdf5)
+    data=[] # initially empty list that we will fill up with the data
+    with h5py.File(dataFile,'r') as f:
+        for i in range(disorder.size):
+            thisField=fields[disorder[i],:] # ensures data returned in original order of fields
+            #print('particle type ','PartType'+thisField[0])
+            #print('field ',thisField[1])
+            data.append(np.array(f['PartType'+thisField[0]][thisField[1]]))
+            # returns all particle data of each field as a numpy array
+    return data # returns all the particle fields as a list of numpy arrays in the same order as initial fields
+
+def getSubhaloField(field,simulation='Illustris-1',snapshot=135):
+    url='http://www.illustris-project.org/api/'+simulation+'/files/groupcat-'+str(snapshot)+'/?Subhalo='+field
+    dataFile=get(url)
+    with h5py.File(dataFile,'r') as f:
+        data=np.array(f['Subhalo'][field])
+    return data
+    
+def getHaloField(field,simulation='Illustris-1',snapshot=135):
+    url='http://www.illustris-project.org/api/'+simulation+'/files/groupcat-'+str(snapshot)+'/?Group='+field
+    dataFile=get(url)
+    with h5py.File(dataFile,'r') as f:
+        data=np.array(f['Group'][field])
+    return data
 
 def getSim(simName):
     r = get(baseUrl)
@@ -41,16 +107,3 @@ def getSub(subs,whichSub):
     sub_url=subs['results'][whichSub]['url']
     sub=get(sub_url)
     return sub
-
-def getData(sub): #at the moment only return pos and vel, would love to generalise
-    cut_req={'dm':'Coordinates,Velocities'}
-    cutout=get(sub['meta']['url']+'cutout.hdf5',cut_req)
-    
-    with h5py.File(cutout,'r') as f:
-        x = f['PartType1']['Coordinates'][:,0] - sub['pos_x'] # ckpc/h
-        y = f['PartType1']['Coordinates'][:,1] - sub['pos_y']
-        z = f['PartType1']['Coordinates'][:,2] - sub['pos_z']
-        vx = f['PartType1']['Velocities'][:,0] - sub['vel_x'] # km/s
-        vy = f['PartType1']['Velocities'][:,1] - sub['vel_y']
-        vz = f['PartType1']['Velocities'][:,2] - sub['vel_z']
-    return np.vstack((x,y,z)),np.vstack((vx,vy,vz))
